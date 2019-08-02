@@ -4,9 +4,9 @@ namespace App\Model;
 
 use Illuminate\Database\Eloquent\Model;
 
-class User extends Model
+class UserRelation extends Model
 {
     //
-    public $table='user';
+    public $table='user_relation';
     public $timestamps= false;
 }

@@ -2,6 +2,8 @@
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use GuzzleHttp\Client;
+use Illuminate\Support\Facades\Redis;
+
 class DemoController extends Controller
 {	
 	//测试curl get方式请求
@@ -245,6 +247,8 @@ class DemoController extends Controller
 
 	//签名
 	public function o1(){
+		phpinfo();die;
+
 		//源数据
 		$arrParams = array(
 		    'zas' => '今',
@@ -346,51 +350,93 @@ class DemoController extends Controller
 		];
 		return $arr;
 	}
-}
-public function getImageCodeUrl(Request $request)
-{
-	session_start();
 
-	$sid=session_id();
+	public function getImageCodeUrl(Request $request)
+	{
+		session_start();
 
-	$image_url="http://1810.oj8k/showImageCode?sid".$sid;
+		$sid=session_id();
 
-	$data=[
-		'image_url'=>$image_url,
-		'unique_id'=>$sid
-	];
-}
+		$image_url="http://1810.oj8k.xyz/showImageCode?sid=".$sid;
 
-public function showImageCode(Request $request)
-{
-	$sid=request('sid');
-
-	session_id($sid);
-
-	session_start();
-
-	$rand=mt_rand(1000,9999);
-
-	$_SESSION['code']=$rand;
-
-	//输出一个图片
-	header('Content-Type:image/png');
-	//create the image 创建一个空的模板
-	$im=imagecreatetruecolor(100, 30);
-
-	//create some colors
-	$white=imagecolorallocate($im, 255, 255, 255);
-	$black=imagecolorallocate($im, 0, 0, 0);
-	imagefilledrectangle($im, 0, 0, 399, 39, $white);
-
-	$tetx=''.$rand;
-	$font='C:\WINDOWS\FONTS\SEGOEPR.TTF';
-
-	for ($i=0; $i < 4; $i++) { 
-		imagettftext($im, 20, rand(-30,30), 15+20*$i, 25, $black, $font, $text[$i]);
+		$data=[
+			'image_url'=>$image_url,
+			'unique_id'=>$sid
+		];
+		return $data;
 	}
 
-	imagepng($im);
-	imagedestroy($im);
-	exit;
+	public function showImageCode(Request $request)
+	{	
+
+		$sid=$request->get('sid')??'';
+
+		session_id($sid);
+
+		session_start();
+
+		$rand=mt_rand(1000,9999);
+
+
+		//输出一个图片
+		header('Content-Type:image/png');
+		//create the image 创建一个空的模板
+		$im=imagecreatetruecolor(150,30);
+
+		//create some colors
+		$white=imagecolorallocate($im, 192, 168, 150);
+		$black=imagecolorallocate($im, 0, 0, 0);
+		imagefilledrectangle($im, 0, 0, 399, 39, $white);
+		$randCode=rand(1,4);
+		$a=rand(1,9);
+		$b=rand(1,9);
+		switch ($randCode) {
+			case '1':
+				$text=$a.'+'.$b.'=?';
+				$result=$a+$b;
+				break;
+			case '2':
+			if ($a<$b) {
+					$a=$a+$b;
+				}
+				$text=$a.'-'.$b.'=?';
+				$result=$a-$b;
+				break;
+			case '3':
+				$text=$a.'*'.$b.'=?';
+				$result=$a*$b;
+				break;
+			case '4':
+				$a=$a*$b;
+				$text=$a.'/'.$b.'=?';
+				$result=$a/$b;
+				break;	
+		}
+		//验证码求出的结果存到redis
+		redis::set('code',$result);
+		
+		//取字体
+		$font=public_path('keys/Arvo-Regular.ttf');
+
+		for ($i=0; $i < 5; $i++) { 
+			if (is_numeric($text[$i])) {
+				imagettftext($im, 20, rand(-30,30), 15+20*$i, 25, $black, $font, $text[$i]);
+			}else{
+				imagettftext($im, 20, 0, 15+20*$i, 25, $black, $font, $text[$i]);
+			}
+		}
+		imagepng($im);
+		imagedestroy($im);
+		exit;
+	}
+
+	public function checkCode(Request $request){
+		$code=$request->get('code')??'';
+		$_code=redis::get('code');
+		if (!empty($code) && $code!=$_code) {
+			return json_encode(['font'=>'验证码错误','code'=>2]);
+		}else{
+			return json_encode(['font'=>'验证成功','code'=>1]);
+		}
+	}
 }

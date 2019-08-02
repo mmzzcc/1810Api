@@ -63,9 +63,31 @@ class McoolController extends CommonController
 	 */
 	public function reg()
 	{
-		$url="http://www.ssina.com.cn/abc/de/.fg.php?id=1&abc=456";
-		echo $this->getExt($url);echo "<hr>";
-		return view('mcool.reg');
+		$url="http://1810.oj8k.xyz/getImageCodeUrl";
+		$data=[
+		  'app_id'=>env('APP_ID')
+		];
+		$res=$this->curlPost($url,['data'=>$data['app_id']]);
+		// var_dump($res);die;
+		$data=json_decode($res,true);
+		// dd($data);
+		return view('mcool.reg',compact('data'));
+	}
+
+	/**
+	 * 刷新验证码
+	 * @return [type] [description]
+	 */
+	public function randCode()
+	{
+		$url="http://1810.oj8k.xyz/getImageCodeUrl";
+		$app_id=env('APP_ID');
+		$data=[
+		  'app_id'=>$app_id
+		];
+		$res=$this->curlPost($url,['data'=>$data['app_id']]);
+		$data=json_decode($res,true);
+		return $data['image_url'];
 	}
 	/**
 	 * 验证唯一性
@@ -135,23 +157,78 @@ class McoolController extends CommonController
 	 * @return [type] [description]
 	 */
 	public function weblogin()
+	{	
+		return view('mcool.weblogin');
+		die;	
+	}/**
+	 * 处理登陆 错误三次锁定
+	 */
+	public function doWeblogin()
 	{
-		$user_name=Request()->input('user_name');
-		$user_pwd=Request()->input('user_pwd');
-
-		$user=User::where(['user_email'=>$user_name])->first();
-		if (!$user) {
-			echo "用户不存在";die;
+		$user_name=Request('user_name');
+		$user_pwd=Request('user_pwd');
+		$where=[
+			'user_email'=>$user_name
+		];
+    	$data=User::where($where)->first();
+		if (!$data) {
+			$this->no('用户不存在');
+     		return;
 		}
-		//判断密码
-		if ($user_pwd==$user['user_pwd']) {
-			$token=md5(time().mt_rand(11111,99999));
-			session(['token'=>$token]);
-			redis::set('token',$token);
-			echo"web登陆成功";
-
+		$u_pwd=password_verify($user_pwd,$data['user_pwd']);
+		$now=time();
+		//错误次数
+		$error_num=$data["error_num"];
+		//错误时间
+		$error_time=$data['error_time'];
+		//密码错误
+		if (!$u_pwd) {
+			if ($now-$error_time>3600) {
+				$errorData=[
+					'error_num'=>1,
+					'error_time'=>$now
+				];
+				//入库
+					User::where(['u_id'=>$data['u_id']])->update($errorData);
+					$this->no('邮箱或密码错误,您还有4次机会！');
+					return;
+			}else{
+				//如果错误次数大于等于3
+				if ($error_num>=5) {
+					$this->no('账号异常 已锁定,请一小时后再试');
+					return;
+				}else{
+					// 否则继续进行监听 错误信息更新
+					$errorData=[
+					'error_num'=>$error_num+1,
+					'error_time'=>$now
+				];
+				//入库
+				User::where(['u_id'=>$data['u_id']])->update($errorData);
+				$count=5-($error_num+1);
+				$this->no('邮箱或密码错误,您还有'.$count.'次机会！');
+				return;
+				}
+			}
 		}else{
-			echo "账号或密码错误";die;
+			//密码正确
+			if ($error_num>=5 && $now-$error_time<3600) {
+				$errorTime=60-ceil(($now-$error_time)/60);
+				$this->no('账号已锁定,请'.$errorTime.'分钟后登陆');
+				return;
+			}
+			//登陆成功即代表已通过验证 给该用户错误信息清零
+			$errorData=[
+				'error_time'=>null,
+				'error_num'=>0
+			];
+			User::where(['u_id'=>$data['u_id']])->update($errorData);
+			$sessionInfo=[
+				'u_id'=>$data['u_id'],
+			];
+			session(['userInfo'=>$sessionInfo]);
+    		cache(['userName'=>$data['u_email']],60*24);
+			$this->ok('登陆成功');
 		}
 	}
 	/**
@@ -181,17 +258,11 @@ class McoolController extends CommonController
 	 * web端用户中心
 	 * @return [type] [description]
 	 */
-	public function webcenter()
+	public function webcenter(Request $request)
 	{	
-		$token=session('token');
-		$cache_token=redis::get('token');
-		if ($token==$cache_token) {
-			$data=User::where(['status'=>1])->first()->toArray();
-			// dd($data);
-			return view('mcool/webcenter',compact('data'));
-		}else{
-			echo "该账号已在其他端登陆";
-		}
+		$query=$request->all()??'1';
+		$data=User::paginate(2);
+		return view('mcool/webcenter',compact('data','query'));
 		
 	}
 	/**
